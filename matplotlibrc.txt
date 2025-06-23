@@ -1,0 +1,1 @@
+animation.ffmpeg_path : C:\ffmpeg\ffmpeg-7.1.1-essentials_build\bin\ffmpeg.exe
