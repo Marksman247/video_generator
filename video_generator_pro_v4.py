@@ -1,32 +1,43 @@
-# Built by MAX — Pro V4 Final Data Race Video Generator
-# Secure, reviewed, clean, and stable version with enhanced CSV parsing, color palette selection, and video customization.
+# Built by MAX — Pro V6 Clean Fixed Data Race Video Generator
+# Secure, reviewed, no extra left space, centered title and subtitle properly placed
 
+# ===== Imports =====
 import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
 from moviepy.editor import ImageSequenceClip
+from matplotlib.offsetbox import OffsetImage, AnnotationBbox
 from PIL import Image
 import numpy as np
 import io
 import os
 
-# Global Matplotlib styling
+# ===== Global Style =====
 plt.rcParams.update({
-    'axes.facecolor': 'white',
-    'figure.facecolor': 'white',
-    'axes.edgecolor': 'white',
+    'axes.facecolor': 'black',
+    'figure.facecolor': 'black',
+    'axes.edgecolor': 'black',
     'axes.grid': False
 })
 
-st.title("📊 Pro V4 Final Data Race Video Generator by MAX")
+# ===== Streamlit Config =====
+st.set_page_config(
+    page_title="Data Race Video Generator by MAX",
+    layout="wide",
+    page_icon="📊"
+)
 
-# Function to generate image frames for each time step
+# ===== Title & Info =====
+st.markdown("<h1 style='text-align: center; color: white;'>📊 Data Race Video Generator</h1>", unsafe_allow_html=True)
+st.markdown("<h4 style='text-align: center; color: gray;'>Built by MAX</h4>", unsafe_allow_html=True)
+st.markdown("---")
+
+# ===== Frame Generator =====
 def generate_frames(df_pivot, top_n, font_size, resolution, video_title, subtitle, color_palette):
     frames = []
     years = df_pivot.index.tolist()
     dpi, figsize = (128, (16, 9)) if resolution == "720p" else (192, (19.2, 10.8))
 
-    # Assign consistent colors using selected palette
     cmap = plt.get_cmap(color_palette)
     colors = cmap.colors if hasattr(cmap, 'colors') else [cmap(i) for i in np.linspace(0, 1, 20)]
     item_colors = {name: colors[i % len(colors)] for i, name in enumerate(df_pivot.columns)}
@@ -35,63 +46,66 @@ def generate_frames(df_pivot, top_n, font_size, resolution, video_title, subtitl
         data = df_pivot.loc[year].sort_values(ascending=False).head(top_n)
         max_value = data.max()
 
-        fig, ax = plt.subplots(figsize=figsize)
+        fig, ax = plt.subplots(figsize=figsize, dpi=dpi)
+        fig.patch.set_facecolor('black')
+        ax.set_facecolor('black')
 
-        # Plot horizontal bar chart
         data.plot(kind='barh', ax=ax, color=[item_colors.get(i, 'skyblue') for i in data.index])
 
-        # Value labels on bars
         for i, (value, name) in enumerate(zip(data.values, data.index)):
-            ax.text(value * 0.98, i, f"{value:,.0f}", ha='right', va='center', fontsize=font_size-2, color='white')
+            ax.text(value * 0.98, i, f"{value:,.0f}", ha='right', va='center',
+                    fontsize=font_size, color='white', fontweight='bold')
 
-        # Title and subtitle
-        ax.set_title(f"{video_title}", fontsize=font_size+10, weight='bold')
-        ax.text(0, top_n + 0.5, f"{subtitle}", fontsize=font_size, color='gray', ha='left')
+        # Centered video title above chart
+        ax.text(max_value * 0.5, top_n + 0.3, f"{video_title}",
+                fontsize=font_size + 10, color='white', ha='center', va='bottom', fontweight='bold')
 
-        # Year label (integer only)
-        ax.text(max_value * 0.95, top_n - 0.5, f"{int(year)}", fontsize=font_size+10, color='gray', ha='right')
+        # Subtitle centered below chart
+        ax.text(max_value * 0.5, -0.9, f"{subtitle}",
+                fontsize=font_size, color='gray', ha='center', va='bottom')
 
-        # Clean chart styling
-        ax.set_xlim(0, max_value * 1.05)
+        # Year label
+        ax.text(max_value * 1.05, -0.5, f"{int(year)}",
+                fontsize=font_size + 12, color='white', ha='right', va='center', fontweight='bold')
+
+        # Clean axes styling
+        ax.set_xlim(0, max_value * 1.12)
         ax.set_xlabel('')
         ax.set_ylabel('')
-        ax.set_yticklabels(data.index, fontsize=font_size)
         ax.set_xticks([])
+        ax.set_yticklabels(data.index, fontsize=font_size, color='white')
         for spine in ax.spines.values():
             spine.set_visible(False)
+        ax.grid(False)
 
-        plt.tight_layout()
+        # Adjust margins: minimal left space, enough top/bottom for labels
+        plt.subplots_adjust(left=0.18, top=0.88, bottom=0.13)
 
-        # Save plot to buffer
+        # Save frame to buffer
         buf = io.BytesIO()
-        plt.savefig(buf, format='png', dpi=dpi)
+        plt.savefig(buf, format='png', dpi=dpi, facecolor=fig.get_facecolor())
         buf.seek(0)
         frames.append(buf)
         plt.close()
 
     return frames
 
-# Function to assemble frames into MP4 video using MoviePy
+# ===== Save Video =====
 def save_video(frames, output_path, fps):
-    image_arrays = []
-    for f in frames:
-        img = Image.open(f)
-        img_array = np.array(img)
-        image_arrays.append(img_array)
-
+    image_arrays = [np.array(Image.open(f)) for f in frames]
     final_clip = ImageSequenceClip(image_arrays, fps=fps)
     final_clip.write_videofile(output_path, codec="libx264")
 
-# Function to load CSV, interpolate frames, and generate video
-def generate_video(csv_file, year_col, name_col, value_col, top_n, font_size, resolution, fps, video_title, subtitle, color_palette):
+# ===== Video Generator from CSV =====
+def generate_video(csv_file, year_col, name_col, value_col, top_n, font_size, resolution, fps,
+                   video_title, subtitle, color_palette, n_frames_per_year):
     try:
-        csv_file.seek(0)  # Reset file pointer before reading
+        csv_file.seek(0)
         df = pd.read_csv(csv_file, skip_blank_lines=True)
         if df.empty or df.shape[1] < 2:
             st.error("❌ CSV appears empty or has no columns.")
             return None
 
-        # Clean and convert columns
         df[year_col] = pd.to_numeric(df[year_col], errors='coerce')
         df[value_col] = pd.to_numeric(df[value_col], errors='coerce')
         df.dropna(subset=[year_col, value_col], inplace=True)
@@ -101,8 +115,6 @@ def generate_video(csv_file, year_col, name_col, value_col, top_n, font_size, re
             st.error("❌ CSV contains no usable data.")
             return None
 
-        # Interpolation between years
-        n_frames_per_year = 10
         years = df_pivot.index.tolist()
         new_years = []
         for i in range(len(years) - 1):
@@ -115,7 +127,7 @@ def generate_video(csv_file, year_col, name_col, value_col, top_n, font_size, re
         df_pivot_interp = df_pivot.reindex(df_pivot.index.union(new_years))
         df_pivot_interp = df_pivot_interp.interpolate(method='linear').sort_index()
 
-        st.write(f"📊 Total frames after interpolation: {len(df_pivot_interp.index)}")
+        st.write(f"📊 Total frames: {len(df_pivot_interp.index)}")
 
         frames = generate_frames(df_pivot_interp, top_n, font_size, resolution, video_title, subtitle, color_palette)
         video_path = 'output_video.mp4'
@@ -127,41 +139,37 @@ def generate_video(csv_file, year_col, name_col, value_col, top_n, font_size, re
         st.error(f"❌ Error: {e}")
         return None
 
-# Streamlit UI Controls
-csv_file = st.file_uploader("📁 Upload CSV Dataset", type=["csv"])
+# ===== Sidebar Config =====
+with st.sidebar:
+    st.header("⚙️ Config")
+    csv_file = st.file_uploader("📁 Upload CSV", type=["csv"])
 
-if csv_file:
-    st.success("✅ CSV uploaded successfully!")
-    csv_file.seek(0)
-    df = pd.read_csv(csv_file, skip_blank_lines=True)
-    columns = df.columns.tolist()
+    if csv_file:
+        df = pd.read_csv(csv_file, skip_blank_lines=True)
+        columns = df.columns.tolist()
+        year_col = st.selectbox("📅 Year Column", columns)
+        name_col = st.selectbox("🏷️ Name Column", columns)
+        value_col = st.selectbox("💲 Value Column", columns)
 
-    # Column selection
-    year_col = st.selectbox("📅 Select Year Column", columns)
-    name_col = st.selectbox("🏷️ Select Item Name Column", columns)
-    value_col = st.selectbox("💲 Select Value Column", columns)
+        top_n = st.slider("🔢 Bars", 2, 20, 5)
+        font_size = st.slider("🔠 Font Size", 12, 36, 16)
+        fps = st.slider("🎞️ FPS", 1, 30, 5)
+        n_frames_per_year = st.slider("🕰️ Frames Per Year", 5, 50, 10)
+        resolution = st.radio("🖥️ Resolution", ["720p", "1080p"], index=0)
+        video_title = st.text_input("🎬 Title", "Data Race Video by MAX")
+        subtitle = st.text_input("📝 Subtitle", "Generated via Streamlit")
+        color_palette = st.selectbox("🎨 Palette", ['tab20', 'Set3', 'plasma', 'inferno', 'magma', 'cividis'], index=0)
 
-    # Video customization controls
-    top_n = st.slider("🔢 Number of Bars to Display", 2, 20, 5)
-    font_size = st.slider("🔠 Font Size", 12, 36, 16)
-    fps = st.slider("🎞️ Frames Per Second", 1, 30, 5)
-    resolution = st.radio("🖥️ Video Resolution", ["720p", "1080p"], index=0)
-    video_title = st.text_input("🎬 Video Title", "Data Race Video by MAX")
-    subtitle = st.text_input("📝 Video Subtitle", "Generated via Streamlit & Python")
+        generate = st.button("🎥 Generate Video")
 
-    # Color palette selector
-    color_palette = st.selectbox("🎨 Color Palette", ['tab20', 'viridis', 'plasma', 'inferno', 'magma', 'cividis'], index=0)
+# ===== Run Generation =====
+if csv_file and generate:
+    st.info("🚀 Generating video...")
+    video_path = generate_video(csv_file, year_col, name_col, value_col, top_n, font_size, resolution, fps,
+                                video_title, subtitle, color_palette, n_frames_per_year)
 
-    if st.button("🎥 Generate MP4 Video"):
-        st.info("🚀 Starting video generation...")
-        video_path = generate_video(csv_file, year_col, name_col, value_col,
-                                    top_n, font_size, resolution, fps,
-                                    video_title, subtitle, color_palette)
-
-        if video_path and os.path.exists(video_path):
-            st.success("✅ MP4 Video generated successfully!")
-            st.video(video_path)
-        else:
-            st.error("❌ Failed to generate video.")
-else:
-    st.info("📁 Please upload a CSV file to begin.")
+    if video_path and os.path.exists(video_path):
+        st.success("✅ Video ready!")
+        st.video(video_path)
+    else:
+        st.error("❌ Failed to generate video.")
